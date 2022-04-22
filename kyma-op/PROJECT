@@ -1,0 +1,16 @@
+domain: kyma-project.io
+layout:
+- go.kubebuilder.io/v3
+projectName: kyma-op
+repo: github.com/adityabhatia/kyma-op-poc/kyma-op
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: kyma-project.io
+  group: clusters
+  kind: Kyma
+  path: github.com/adityabhatia/kyma-op-poc/kyma-op/api/v1alpha1
+  version: v1alpha1
+version: "3"
