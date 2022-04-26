@@ -29,11 +29,13 @@ type KymaSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Foo is an example field of Kyma. Edit kyma_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	Name string `json:"name,omitempty"`
+	Type string `json:"type,omitempty"`
 }
 
 // KymaStatus defines the observed state of Kyma
 type KymaStatus struct {
+	State string `json:"state,omitempty"`
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 }
