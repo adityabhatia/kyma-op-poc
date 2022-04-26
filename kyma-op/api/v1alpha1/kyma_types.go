@@ -42,6 +42,7 @@ type KymaStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+genclient
 
 // Kyma is the Schema for the kymas API
 type Kyma struct {
