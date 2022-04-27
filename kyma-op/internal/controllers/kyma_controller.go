@@ -63,15 +63,21 @@ func (r *KymaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// TODO(user): your logic here
 
 	kymaObj := &clustersv1alpha1.Kyma{}
-	r.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, kymaObj)
+	if err := r.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, kymaObj); err != nil {
+		logger.Error(err, "kyma object read error")
+	}
 
 	configMap, err := r.GetConfigMap(ctx, req)
 	if err != nil {
 		logger.Error(err, "config map not found")
 	}
 
-	controllerutil.SetOwnerReference(kymaObj, configMap, r.Scheme)
-	r.Update(ctx, configMap)
+	if err := controllerutil.SetOwnerReference(kymaObj, configMap, r.Scheme); err != nil {
+		logger.Error(err, "set owner ref error")
+	}
+	if err := r.Update(ctx, configMap); err != nil {
+		logger.Error(err, "owner ref update error")
+	}
 
 	// read config map
 	if err := r.ReconcileFromConfigMap(ctx, req, configMap, kymaObj.Spec.Components); err != nil {
@@ -82,7 +88,9 @@ func (r *KymaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	// perform some operation on KymaCR
 	if kymaObj.Status.State != "INITIAL_STATE" {
 		kymaObj.Status.State = "PENDING_STATE"
-		r.Status().Update(ctx, kymaObj)
+		if err = r.Status().Update(ctx, kymaObj); err != nil {
+			logger.Error(err, "kyma object update error")
+		}
 		logger.Info("setting", "status", kymaObj.Status.State)
 	}
 
@@ -173,7 +181,9 @@ func (r *KymaReconciler) GetResource(ctx context.Context, gvr schema.GroupVersio
 	}
 
 	resource, err := dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
+	if apiErrors.IsNotFound(err) {
+		return false
+	} else if err != nil {
 		logger.Error(err, "resource could not be fetched")
 		return false
 	}

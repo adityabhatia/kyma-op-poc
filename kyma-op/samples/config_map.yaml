@@ -5,12 +5,13 @@ metadata:
   namespace: default
 data:
   serverless: |-
+    crd-url: ""
     kind: ServerlessConfiguration
     group: kyma.kyma-project.io
     resource: serverlessconfigurations
     version: v1alpha1
     spec: 
-      commonPrefix: "created From Dynamic Client"
+      commonPrefix: "PENDING_STATE_FROM_KYMA_OP"
       githubRepository:
         authKey: "abcd1234"
         url: "https://foobar.kyma-project.io"
