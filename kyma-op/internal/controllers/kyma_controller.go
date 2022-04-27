@@ -18,12 +18,14 @@ package controllers
 
 import (
 	"context"
-	"github.com/pkg/errors"
+	"fmt"
+	clustersv1alpha1 "github.com/adityabhatia/kyma-op-poc/kyma-op/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	yaml2 "k8s.io/apimachinery/pkg/runtime/serializer/yaml"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
@@ -31,11 +33,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	clustersv1alpha1 "github.com/adityabhatia/kyma-op-poc/kyma-op/api/v1alpha1"
 )
 
 // KymaReconciler reconciles a Kyma object
@@ -65,14 +65,23 @@ func (r *KymaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	kymaObj := &clustersv1alpha1.Kyma{}
 	r.Get(ctx, types.NamespacedName{Name: req.Name, Namespace: req.Namespace}, kymaObj)
 
+	configMap, err := r.GetConfigMap(ctx, req)
+	if err != nil {
+		logger.Error(err, "config map not found")
+	}
+
+	controllerutil.SetOwnerReference(kymaObj, configMap, r.Scheme)
+	r.Update(ctx, configMap)
+
 	// read config map
-	if err := r.ReconcileFromConfigMap(ctx, req); err != nil {
-		logger.Error(err, "config map error")
+	if err := r.ReconcileFromConfigMap(ctx, req, configMap, kymaObj.Spec.Components); err != nil {
+		logger.Error(err, "component CR creation error")
 		return ctrl.Result{}, err
 	}
 
-	if kymaObj.Spec.Name != kymaObj.Status.State {
-		kymaObj.Status.State = kymaObj.Spec.Name
+	// perform some operation on KymaCR
+	if kymaObj.Status.State != "INITIAL_STATE" {
+		kymaObj.Status.State = "PENDING_STATE"
 		r.Status().Update(ctx, kymaObj)
 		logger.Info("setting", "status", kymaObj.Status.State)
 	}
@@ -80,79 +89,77 @@ func (r *KymaReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	return ctrl.Result{}, nil
 }
 
-func (r *KymaReconciler) ReconcileFromConfigMap(ctx context.Context, req ctrl.Request) error {
+func (r *KymaReconciler) GetConfigMap(ctx context.Context, req ctrl.Request) (*corev1.ConfigMap, error) {
 	logger := log.FromContext(ctx)
 	configMapFound := &corev1.ConfigMap{}
 	err := r.Get(context.TODO(), types.NamespacedName{Name: "kyma-component-config", Namespace: req.Namespace}, configMapFound)
 	if err != nil && apiErrors.IsNotFound(err) {
 		logger.Error(err, "ConfigMap not found… wont deploy untill config map is found\n")
-		return err
+		return nil, err
 	}
+	return configMapFound, nil
+}
 
-	serverless, ok := configMapFound.Data["serverless"]
-	if !ok {
-		return errors.New("serverless component now found")
-	}
-	istio, ok := configMapFound.Data["istio"]
-	if !ok {
-		return errors.New("serverless component now found")
-	}
+func (r *KymaReconciler) ReconcileFromConfigMap(ctx context.Context, req ctrl.Request, configMap *corev1.ConfigMap, kymaComponents []clustersv1alpha1.ComponentType) error {
+	logger := log.FromContext(ctx)
+	for _, component := range kymaComponents {
+		componentName := component.Name + "-name"
 
-	serverlessInfo := make(map[string]interface{})
-	if err = yaml.Unmarshal([]byte(serverless), &serverlessInfo); err != nil {
-		return errors.New("error reading serverless info file")
-	}
+		componentBytes, ok := configMap.Data[component.Name]
+		if !ok {
+			return fmt.Errorf("%s serverless component now found", component.Name)
+		}
 
-	istioInfo := make(map[string]interface{})
-	if err = yaml.Unmarshal([]byte(istio), &istioInfo); err != nil {
-		return errors.New("error reading istio info file")
-	}
+		componentYaml := make(map[string]interface{})
+		if err := yaml.Unmarshal([]byte(componentBytes), &componentYaml); err != nil {
+			return fmt.Errorf("error during config map unmarshal %w", err)
+		}
 
-	vs := &unstructured.Unstructured{}
-	dec := yaml2.NewDecodingSerializer(unstructured.UnstructuredJSONScheme)
-	if _, _, err := dec.Decode([]byte(serverless), nil, vs); err != nil {
-		return errors.New("decode error")
-	}
+		gvr := schema.GroupVersionResource{
+			Group:    componentYaml["group"].(string),
+			Resource: componentYaml["resource"].(string),
+			Version:  componentYaml["version"].(string),
+		}
 
-	//dynClient := r.GetDynamicClient(ctx)
+		if r.GetResource(ctx, gvr, componentName, req.Namespace) {
+			continue
+		}
 
-	//obj := v1alpha1.ServerlessConfiguration{}
-	//obj.Name = "recon-name-trial"
-	//obj.Namespace = req.Namespace
-	//if err := r.Client.Create(ctx, &obj, &client.CreateOptions{}); err != nil {
-	//	return err
-	//}
-
-	serverlessObj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"kind":       serverlessInfo["kind"].(string),
-			"apiVersion": serverlessInfo["group"].(string) + "/" + serverlessInfo["version"].(string),
-			"metadata": map[string]interface{}{
-				"name":      "some-name",
-				"namespace": req.Namespace,
+		componentUnstructured := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"kind":       componentYaml["kind"].(string),
+				"apiVersion": componentYaml["group"].(string) + "/" + componentYaml["version"].(string),
+				"metadata": map[string]interface{}{
+					"name":      componentName,
+					"namespace": req.Namespace,
+				},
+				"spec": componentYaml["spec"],
 			},
-			"spec": serverlessInfo["spec"],
-		},
+		}
+
+		if err := r.Client.Create(context.Background(), componentUnstructured, &client.CreateOptions{}); err != nil {
+			return fmt.Errorf("error creating custom resource of type %s %w", component.Name, err)
+		}
+
+		logger.Info("successfully created component CR of", "type", component.Name)
 	}
 
+	// TODO: check why a gvk generic DynamicClient doesn't perform create operations
+	//dynClient := r.GetDynamicClient(ctx)
 	//res := dynClient.Resource(schema.GroupVersionResource{
 	//	Group:    serverlessInfo["group"].(string),
 	//	Resource: serverlessInfo["resource"].(string),
 	//	Version:  serverlessInfo["version"].(string),
 	//})
-	if err := r.Client.Create(context.Background(), serverlessObj, &client.CreateOptions{}); err != nil {
-		return errors.Wrap(err, "error creating serverless resource")
-	}
 
 	return nil
 }
 
-func (r *KymaReconciler) GetDynamicClient(ctx context.Context) dynamic.Interface {
+func (r *KymaReconciler) GetResource(ctx context.Context, gvr schema.GroupVersionResource, name string, namespace string) bool {
 	logger := log.FromContext(ctx)
 
 	//kubeConfig := flag.String("kubeconfig", "/Users/d063994/.kube/config", "location of kubeconfig")
-	//config, err := clientcmd.BuildConfigFromFlags("", "/Users/d063994/.kube/config")
-	config, err := clientcmd.BuildConfigFromFlags("", "/Users/d063994/SAPDevelop/go/kyma-op-poc/kyma-op/kubeconfig.yaml")
+	config, err := clientcmd.BuildConfigFromFlags("", "/Users/d063994/.kube/config")
 	if err != nil {
 		// check in cluster config
 		config, err = rest.InClusterConfig()
@@ -164,26 +171,22 @@ func (r *KymaReconciler) GetDynamicClient(ctx context.Context) dynamic.Interface
 	if err != nil {
 		logger.Error(err, "error while creating dynamic client")
 	}
-	return dynamicClient
 
-	//resources, err := dynamicClient.Resource(schema.GroupVersionResource{
-	//	Group:    "kyma.kyma-project.io",
-	//	Resource: "serverlessconfigurations",
-	//	Version:  "v1alpha1",
-	//}).List(ctx, metav1.ListOptions{})
-	//if err != nil {
-	//	logger.Error(err, "resource could not be fetched")
-	//}
-	//
-	//logger.Info("found", "resource", resources.Items[0].GetName())
-	//return dynamicClient
+	resource, err := dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		logger.Error(err, "resource could not be fetched")
+		return false
+	}
+
+	logger.Info("resource already exists", "resource_type", resource.GetName())
+	return true
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *KymaReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clustersv1alpha1.Kyma{}).
-		WithEventFilter(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})).
+		Owns(&corev1.ConfigMap{}).
 		//Watches(
 		//	&source.Kind{Type: &corev1.ConfigMap{}},
 		//	handler.EnqueueRequestsFromMapFunc(r.findObjectsForConfigMap),

@@ -35,12 +35,22 @@ spec:
           spec:
             description: KymaSpec defines the desired state of Kyma
             properties:
-              name:
-                description: Foo is an example field of Kyma. Edit kyma_types.go to
-                  remove/update
-                type: string
-              type:
-                type: string
+              components:
+                description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file'
+                items:
+                  properties:
+                    name:
+                      type: string
+                    settings:
+                      additionalProperties:
+                        type: string
+                      type: object
+                  required:
+                  - name
+                  - settings
+                  type: object
+                type: array
             type: object
           status:
             description: KymaStatus defines the observed state of Kyma

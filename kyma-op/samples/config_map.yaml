@@ -28,12 +28,13 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: manager-role
+  name: component-role
 rules:
   - apiGroups:
       - kyma.kyma-project.io
     resources:
       - serverlessconfigurations
+      - istioconfigurations
     verbs:
       - create
       - delete
@@ -46,12 +47,14 @@ rules:
       - kyma.kyma-project.io
     resources:
       - serverlessconfigurations/finalizers
+      - istioconfigurations/finalizers
     verbs:
       - update
   - apiGroups:
       - kyma.kyma-project.io
     resources:
       - serverlessconfigurations/status
+      - istioconfigurations/status
     verbs:
       - get
       - patch
@@ -61,7 +64,7 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: manager-rolebinding
+  name: component-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

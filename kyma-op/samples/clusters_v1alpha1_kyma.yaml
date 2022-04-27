@@ -3,5 +3,12 @@ kind: Kyma
 metadata:
   name: kyma-sample
 spec:
-  name: kymaObj1
-  type: istio
+  components:
+  - name: istio
+    settings:
+      type: "type"
+      config: "config"
+  - name: serverless
+    settings:
+      type: "type"
+      config: "config"

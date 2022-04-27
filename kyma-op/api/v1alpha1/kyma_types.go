@@ -23,14 +23,16 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+type ComponentType struct {
+	Name     string            `json:"name"`
+	Settings map[string]string `json:"settings"`
+}
+
 // KymaSpec defines the desired state of Kyma
 type KymaSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
-	// Foo is an example field of Kyma. Edit kyma_types.go to remove/update
-	Name string `json:"name,omitempty"`
-	Type string `json:"type,omitempty"`
+	Components []ComponentType `json:"components,omitempty"`
 }
 
 // KymaStatus defines the observed state of Kyma
@@ -40,9 +42,9 @@ type KymaStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 }
 
+//+genclient
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
-//+genclient
 
 // Kyma is the Schema for the kymas API
 type Kyma struct {
